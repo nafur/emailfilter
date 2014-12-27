@@ -1,0 +1,50 @@
+This software strives to provide a compact library to perform email
+filtering over multiple IMAP accounts.
+
+= Accounts =
+The accounts are specified as dictionaries that are given to the core
+object. The passwords are not stored in plaintext, but the password field in
+the dictionary is merely an identifier for the password.
+All passwords are stored in a single encrypted file that is read upon
+inintialization. The user is prompted interactively for the password.
+The password file can be encrypted and decrypted using the password.py
+script.
+At first, you have to create a plain password file. It shall contain a
+single json dictionary mapping from the password identifier to the actual
+password. Now encrypt it and pass the filename to the core object.
+
+= Security =
+The password file is encrypted using AES.
+The key is derived from the password entered by the user using SHA256.
+However, all passwords are stored in the program memory, such that a
+connection can be restored.
+
+= Filtering =
+Conceptually, there exist multiple sources of messages. Usually, these will
+be the INBOX folders of all accounts. Every new message is passed to a
+global handler. A handler consists of multiple rules ina specific order.
+It will execute all rows one after another and stop after the first rule
+matched. A rule has a list of conditions (or filters) that must evaluate to
+true. If this is the case, the rule matches and executes a list of actions
+on the message that is being processed.
+
+As filtering is the core of this library, creating rules and a handler
+should be really easy.
+
+Create a handler:
+	from  handler import *
+	h = Handler()
+
+Add rules:
+	h.add(unread().subject("^\[Foo\]"))
+
+= Bootup and normal operation =
+Usually, the imap connections will issue the IDLE command and thus wait
+until anything happens in the selected folder and feed the mails that caused
+the IDLE command to stop to the handler.
+
+However, it may be desired to look at the existing mails to. As it suffices
+to do this only once, there is the opportunity to start with a bootup stage.
+A second handler object can be passed to this message. All messages that
+pass this handler will be fed to the default handler. Note that the bootup
+handler will only check the filters but not execute the actions.
