@@ -21,33 +21,40 @@ import struct
 import sys
 
 from Crypto.Cipher import AES
-
+from Crypto.Protocol import KDF
 
 def readCryptedFile(filename):
 	"""Read file and extract IV, length and encrypted data."""
 	f = open(filename, "r")
 	iv = f.read(16)
+	salt = f.read(16)
 	len = struct.unpack('<Q', f.read(struct.calcsize('Q')))[0]
 	data = f.read()
-	return (data,len,iv)
+	return (data,len,iv,salt)
 
-def writeCryptedFile(filename, data, length, iv):
+def writeCryptedFile(filename, data, length, iv, salt):
 	"""Write IV, length and encrypted data to file."""
 	f = open(filename, "w")
 	f.write(iv)
+	f.write(salt)
 	f.write(struct.pack('<Q', length))
 	f.write(data)
 
-def getKey():
+def getKey(salt = None):
 	"""Obtains a password from the user and creates an AES key from it."""
 	# Use SHA256 to create a 256bit key for AES
 	password = getpass.getpass("Password: ")
-	return hashlib.sha256(password).digest()
+	if salt == None:
+		salt = ''.join(chr(random.randint(0, 0xFF)) for i in range(16))
+		key = KDF.PBKDF2(password, salt)
+		return (key, salt)
+	else:
+		return KDF.PBKDF2(password, salt)
 
 def decrypt(filename):
 	"""Decrypts the content of the file."""
-	data,len,iv = readCryptedFile(filename)
-	dec = AES.new(getKey(), AES.MODE_CBC, IV=iv)
+	data,len,iv,salt = readCryptedFile(filename)
+	dec = AES.new(getKey(salt), AES.MODE_CBC, IV=iv)
 	return dec.decrypt(data)[:len]
 		
 def encrypt(source, dest):
@@ -56,8 +63,9 @@ def encrypt(source, dest):
 	length = len(plain)
 	plain += ' ' * (16 - length % 16)
 	iv = ''.join(chr(random.randint(0, 0xFF)) for i in range(16))
-	enc = AES.new(getKey(), AES.MODE_CBC, IV=iv)
-	writeCryptedFile(dest, enc.encrypt(plain), length, iv)
+	key, salt = getKey()
+	enc = AES.new(key, AES.MODE_CBC, IV=iv)
+	writeCryptedFile(dest, enc.encrypt(plain), length, iv, salt)
 
 def readPasswords(filename, accounts):
 	"""Decrypts the passwords and stores them in the given accounts dictionary."""
