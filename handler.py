@@ -17,64 +17,69 @@ class HandlerRule:
 		self.__filters = filters
 		self.__actions = actions
 	
-	def check(self, msg):
+	def check(self, msg, core):
 		for f in self.__filters:
-			if not f(msg):
+			if not f(msg, core):
 				return False
 		return True
 		
-	def execute(self, msg):
-		if not self.check(msg): return False
+	def execute(self, msg, core):
+		if not self.check(msg, core): return False
 		for a in self.__actions:
-			a(msg)
+			a(msg, core)
 		return True
 
 	### filters
 	def __match(self, regex):
 		r = re.compile(regex)
-		return lambda s: regex.match(s)
+		return lambda s: r.match(s)
 
 	def filter(self, f):
 		return HandlerRule(self.__filters + [f], self.__actions)
+	
+	def account(self, account):
+		f = lambda m, c: m.imap().name() == account
+		return self.filter(f)
 
-	def flags(self, read = None):
-		f = lambda m: read == None or m.read == read
+	def flags(self, seen = None):
+		f = lambda m, c: seen == None or m.isflagged("\\Seen") == seen
 		return self.filter(f)
 	
 	def subject(self, regex):
-		f = lambda m: self.__match(regex, m.subject) != None
+		f = lambda m, c: self.__match(regex)(m["subject"]) != None
 		return self.filter(f)
 	
 	def fromto(self, regex):
-		f = lambda m: self.__match(regex, m.From) or  self.__match(regex, m.to)
+		f = lambda m, c: self.__match(regex)(m["from"]) or  self.__match(regex)(m["to"])
 		return self.filter(f)
 	
 	### actions
 	def action(self, a):
 		return HandlerRule(self.__filters, self.__actions + [a])
 
-	def mark(self, read = None):
-		a = lambda m: m.setRead(read)
+	def mark(self, seen = None):
+		a = lambda m, c: m.flag("\\Seen")
 		return self.action(a)
 	
-	def move(self, account = None, path = None):
-		a = lambda m: m.move(path, account)
+	def move(self, path, account = None):
+		a = lambda m, c: m.move(path, c.client(account))
 		return self.action(a)
 
 def all():
 	"""Returns a handler that catches all mails."""
 	return HandlerRule()
 
-def unread():
-	"""Returns a handler that catches all unread mails."""
-	return HandlerRule().flags(read = False)
+def unseen():
+	"""Returns a handler that catches all unseen mails."""
+	return HandlerRule().flags(seen = False)
 
 class Handler:
 	def __init__(self):
 		self.__handlers = []
 	def add(self, h):
 		self.__handlers.append(h)
-	def execute(self, m):
+	def execute(self, m, core):
+		print("Executing on \"" + str(m) + "\"")
 		for h in self.__handlers:
-			if h.execute(m): return True
+			if h.execute(m, core): return True
 		return False

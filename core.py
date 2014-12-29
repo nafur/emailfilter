@@ -1,4 +1,5 @@
 import imap
+import select
 
 class Core:
 	def __init__(self, accounts, handler):
@@ -6,26 +7,48 @@ class Core:
 		self.__handler = handler
 		self.__clients = {}
 		self.__connect()
+		self.__flag = "X-Emailfilter-Seen"
 	
 	def __connect(self):
 		for a in self.__accounts:
-			self.__clients[a] = imap.runClient(self.__accounts[a])
+			self.__clients[a] = imap.runClient(a, self.__accounts[a])
 	
-	def __destroy__(self):
+	def __del__(self):
 		for a in self.__accounts:
 			del self.__clients[a]
 	
-	def __idleCallback(self, client, messages):
-		for m in messages:
-			self.__handler.execute(m)
-		client.idle(lambda m: self.__idleCallback(client, m))
+	def client(self, account):
+		if account == None: return None
+		return self.__clients[account]
 	
-	def bootup(self, handler = None):
-		for c in self.__clients.values():
-			for m in c.all():
-				if handler == None or handler.check(m):
-					self.__handler.execute(m)
+	def resetFlags(self):
+		for c in self.__clients:
+			for m in self.__clients[c].searchFlagged(self.__flag):
+				m.unflag(self.__flag)
 	
-	def run(self, accounts):
-		for c in self.__clients.values():
-			c.idle(lambda m: self.__idleCallback(c, m))
+	def backup(self, account, mbox):
+		self.client(account).dumpMbox(mbox)
+	
+	def restore(self, account, mbox, path):
+		self.client(account).restoreMbox(mbox, path)
+	
+	def run(self):
+		print("Entering main loop...")
+		sockets = {}
+		for c in self.__clients:
+			sockets[ self.__clients[c].socket() ] = self.__clients[c]
+		active = sockets.keys()
+		
+		while True:
+			print(sockets)
+			for s in active:
+				for m in sockets[s].searchUnflagged(self.__flag):
+					self.__handler.execute(m, self)
+					m.flag(self.__flag)
+
+			for c in self.__clients:
+				self.__clients[c].idle()
+			active = select.select(sockets.keys(), [], [])[0]
+			for c in self.__clients:
+				self.__clients[c].idle_done()
+
